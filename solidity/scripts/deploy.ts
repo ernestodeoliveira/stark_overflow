@@ -13,6 +13,8 @@ async function main() {
             networkName = "optimismSepolia";
         } else if (process.argv.includes("sepolia") || process.argv.includes("--network") && process.argv[process.argv.indexOf("--network") + 1] === "sepolia") {
             networkName = "sepolia";
+        } else if (process.argv.includes("baseSepolia") || process.argv.includes("--network") && process.argv[process.argv.indexOf("--network") + 1] === "baseSepolia") {
+            networkName = "baseSepolia";
         }
     }
     console.log("Network Name:", networkName);
@@ -59,13 +61,25 @@ async function main() {
     const mockTokenArtifact = await hre.artifacts.readArtifact("MockStarkToken");
     const starkOverflowArtifact = await hre.artifacts.readArtifact("StarkOverflow");
 
-    // Deploy MockStarkToken
-    console.log("Deploying MockStarkToken...");
-    const MockStarkTokenFactory = new ethers.ContractFactory(mockTokenArtifact.abi, mockTokenArtifact.bytecode, wallet);
-    const starkToken = await MockStarkTokenFactory.deploy();
-    await starkToken.waitForDeployment();
-    const starkTokenAddress = await starkToken.getAddress();
-    console.log("MockStarkToken deployed to:", starkTokenAddress);
+    let starkTokenAddress;
+
+    // Deploy MockStarkToken only if NOT on Base Sepolia (or other networks with specific tokens)
+    if (networkName === "baseSepolia") {
+        console.log("Base Sepolia detected. Using existing WETH as Stark Token.");
+        starkTokenAddress = "0x4200000000000000000000000000000000000006";
+    } else {
+        console.log("Deploying MockStarkToken...");
+        const MockStarkTokenFactory = new ethers.ContractFactory(mockTokenArtifact.abi, mockTokenArtifact.bytecode, wallet);
+        const starkToken = await MockStarkTokenFactory.deploy();
+        await starkToken.waitForDeployment();
+        starkTokenAddress = await starkToken.getAddress();
+        console.log("MockStarkToken deployed to:", starkTokenAddress);
+
+        // Verify token balance (using contract instance)
+        const tokenContract = new ethers.Contract(starkTokenAddress, mockTokenArtifact.abi, wallet);
+        const tokenBalance = await tokenContract.balanceOf(wallet.address);
+        console.log("Deployer STARK token balance:", ethers.formatEther(tokenBalance), "STARK");
+    }
 
     // Deploy StarkOverflow
     console.log("Deploying StarkOverflow...");
@@ -77,15 +91,10 @@ async function main() {
 
     console.log("\n=== Deployment Summary ===");
     console.log("Network:", hre.network.name);
-    console.log("MockStarkToken:", starkTokenAddress);
+    console.log("Stark Token:", starkTokenAddress);
     console.log("StarkOverflow:", starkOverflowAddress);
     console.log("Owner:", wallet.address);
     console.log("========================\n");
-
-    // Verify token balance (using contract instance)
-    const tokenContract = new ethers.Contract(starkTokenAddress, mockTokenArtifact.abi, wallet);
-    const tokenBalance = await tokenContract.balanceOf(wallet.address);
-    console.log("Deployer STARK token balance:", ethers.formatEther(tokenBalance), "STARK");
 }
 
 main()
