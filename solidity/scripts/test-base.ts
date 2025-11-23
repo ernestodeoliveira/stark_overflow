@@ -3,7 +3,7 @@ import hre from "hardhat";
 
 // Deployed contract addresses on Base Sepolia
 const WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
-const STARK_OVERFLOW_ADDRESS = "0x98B6ff9d138894e3D9F5CAFa046cE564Bf8dbcf6";
+const STARK_OVERFLOW_ADDRESS = "0x6Cbe2cf03bE33409D6B642eD5F19954d221D3465";
 
 // Minimal WETH ABI for wrapping/unwrapping
 const WETH_ABI = [
@@ -119,19 +119,31 @@ async function main() {
     }
     console.log();
 
+    // Helper to generate random Filecoin-style CIDs
+    const generateRandomFilecoinCid = () => {
+        const chars = "abcdefghijklmnopqrstuvwxyz234567"; // Base32 characters
+        let result = "bafy";
+        for (let i = 0; i < 55; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    };
+
     // Test 3: Create Forums on Base
     console.log("📁 Test 3: Create Forums on Base");
     try {
-        const forumNames = ["Base DeFi", "Base NFTs", "Base Gaming"];
-        // Using IPFS Logo CID for testing real image rendering
-        const realImageCid = "QmZTR5bcpQD7cFgTorqxZDYaew1Wqgfbd2ud9QqGPAkK2V";
+        const forumsToCreate = [
+            { name: "ReactJs", cid: "bafkreiegcrj46umajjetsttdadeifxbxh5uufbmvaa2humeg2zobmqxns" },
+            { name: "NodeJS", cid: "bafkreicudjahz2ktwaembqrelrjcb74l53hrkg7s6wfj2nqejcyd3np4vi" },
+            { name: "Java", cid: "bafkreic7c5fpbndqanpqdy6wutuzwxmb2vhizeexignulnq42gvppwcbye" }
+        ];
 
-        for (const name of forumNames) {
+        for (const forum of forumsToCreate) {
             try {
-                console.log(`   Creating forum: ${name}...`);
-                const tx = await starkOverflow.createForum(name, realImageCid);
+                console.log(`   Creating forum: ${forum.name}...`);
+                const tx = await starkOverflow.createForum(forum.name, forum.cid);
                 await tx.wait();
-                console.log(`   ✅ Created forum: ${name} (Icon: ${realImageCid})`);
+                console.log(`   ✅ Created forum: ${forum.name} (Icon: ${forum.cid})`);
             } catch (e: any) {
                 console.log(`   ⚠️  Forum creation note: ${e.message.substring(0, 100)}...`);
             }
@@ -168,15 +180,15 @@ async function main() {
             const forumId = forums[0].id;
             console.log(`   Asking question in Forum ${forumId}...`);
 
-            // Using IPFS Logo CID for content as well to test image rendering
-            const realContentCid = "QmZTR5bcpQD7cFgTorqxZDYaew1Wqgfbd2ud9QqGPAkK2V";
+            // Specific CID for question description (using the same as answer for consistency)
+            const questionCid = "bafkreid6udzgnjnppwgxnog2bjoohmye6tbffzuxqqeglaetw275cqfs2y";
 
             // DEBUG: Gas Estimation
             try {
                 const gasEstimate = await starkOverflow.askQuestion.estimateGas(
                     forumId,
                     `Base Question ${Date.now()}: How to use WETH?`,
-                    realContentCid,
+                    questionCid,
                     `https://github.com/base/example`,
                     ["base", "weth"],
                     stakeAmount
@@ -189,7 +201,7 @@ async function main() {
             const tx = await starkOverflow.askQuestion(
                 forumId,
                 `Base Question ${Date.now()}: How to use WETH?`,
-                realContentCid,
+                questionCid,
                 `https://github.com/base/example`,
                 ["base", "weth"],
                 stakeAmount
@@ -197,12 +209,23 @@ async function main() {
             await tx.wait();
             console.log(`   ✅ Created question with ${ethers.formatEther(stakeAmount)} WETH stake`);
 
-            // Capture the new Question ID
-            const lastQId = await starkOverflow.lastQuestionId();
+            // Capture the new Question ID with retry
+            let lastQId = await starkOverflow.lastQuestionId();
+            let qRetries = 5;
+            while (Number(lastQId) === 0 && qRetries > 0) {
+                console.log(`   Waiting for Question ID update... (${qRetries} retries left)`);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                lastQId = await starkOverflow.lastQuestionId();
+                qRetries--;
+            }
             questionIdToAnswer = Number(lastQId);
             console.log(`   New Question ID: ${questionIdToAnswer}`);
 
-            testsPassed++;
+            if (questionIdToAnswer === 0) {
+                console.log("   ❌ Failed to retrieve new Question ID.");
+            } else {
+                testsPassed++;
+            }
         } else {
             console.log("   ⚠️  Skipping question creation: No forums found");
             testsSkipped++;
@@ -257,9 +280,12 @@ async function main() {
 
             const starkOverflowUser2 = starkOverflow.connect(user2);
 
+            // Specific CID for answers as requested
+            const answerCid = "bafkreid6udzgnjnppwgxnog2bjoohmye6tbffzuxqqeglaetw275cqfs2y";
+
             const answerTx = await starkOverflowUser2.submitAnswer(
                 questionIdToAnswer,
-                "QmBaseAnswerCid"
+                answerCid
             );
             const receipt = await answerTx.wait();
             console.log(`   ✅ Answer submitted (Block: ${receipt.blockNumber})`);
